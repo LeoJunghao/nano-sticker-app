@@ -3,7 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-// 建立穩固的運行時環境變數物件，防止 Vite 構建時將 process.env 替換為空物件
+// 建立運行時墊片，確保 SDK 能讀取到動態設定的金鑰
 if (typeof (window as any).process === 'undefined') {
   (window as any).process = { env: {} };
 } else if (!(window as any).process.env) {
@@ -11,13 +11,11 @@ if (typeof (window as any).process === 'undefined') {
 }
 
 const rootElement = document.getElementById('root');
-if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
+if (rootElement) {
+  const root = ReactDOM.createRoot(rootElement);
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
 }
-
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
