@@ -1,13 +1,18 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// 使用旗艦影像模型
+// 使用旗艦影像模型 Gemini 3 Pro Image
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 
+const getApiKey = (): string => {
+  // 多重路徑偵測金鑰，解決外部連結環境存取不到的問題
+  const win = window as any;
+  const key = win.process?.env?.API_KEY || win.API_KEY || (import.meta.env ? import.meta.env.VITE_API_KEY : "");
+  return key || "";
+};
+
 const getClient = () => {
-  // 強制從全域 window 讀取，避免 Vite 在 build 階段將 process.env.API_KEY 替換成 undefined
-  const apiKey = (window as any).process?.env?.API_KEY;
-  
+  const apiKey = getApiKey();
   if (!apiKey || apiKey.length < 10) {
     throw new Error("API_KEY_MISSING");
   }
@@ -21,10 +26,11 @@ export const generateCharacterOptions = async (
   const ai = getClient();
   const results: string[] = [];
   
+  // 建立 3 個不同的視角以供選擇
   const prompts = [
-    `Create a high-quality character sheet, front view, based on the reference images. Full body, pure white background. Artistic Style: ${style}. High consistency.`,
-    `A happy version of the same character, waving. Pure white background, Style: ${style}.`,
-    `A thoughtful pose of the character, identical appearance. White background, Style: ${style}.`
+    `Create a character concept art based on reference. Front view, simple pose. Background: Pure White. Style: ${style}.`,
+    `Same character, different expression (smiling). High consistency. Background: Pure White. Style: ${style}.`,
+    `Full body shot of the character. Background: Pure White. Style: ${style}.`
   ];
 
   for (const prompt of prompts) {
@@ -51,7 +57,7 @@ export const generateCharacterOptions = async (
         results.push(`data:image/png;base64,${imagePart.inlineData.data}`);
       }
     } catch (error: any) {
-      console.error("Character Gen Error:", error);
+      console.error("Option Gen Error:", error);
       throw error;
     }
   }
@@ -65,14 +71,19 @@ export const generateStickerGrid = async (
 ): Promise<string | null> => {
   const ai = getClient();
   
-  const prompt = `Task: Generate a 4x3 grid (total 12 distinct stickers) of the EXACT same character.
-  Atmosphere: ${stickerAdjectives}.
-  Layout: 4 columns and 3 rows (4x3 grid), filling the 16:9 canvas.
-  Language: Traditional Chinese (繁體中文).
-  Text content: Use these phrases: ${stickerText}.
-  Visual Style: Handwritten, bold, cute Traditional Chinese text integrated into each sticker frame.
-  Background: Pure white background.
-  Consistency: Character must look identical in all 12 frames.`;
+  // 核心 Prompt：定義 4x3 布局與手寫繁體中文
+  const prompt = `ACT AS A PRO STICKER AGENT. 
+  Task: Create a sticker sheet containing EXACTLY 12 distinct poses in a 4x3 GRID layout.
+  Character: Same as input image, strictly consistent.
+  Atmosphere/Adjectives: ${stickerAdjectives}.
+  Text Content: Add these 12 labels: "${stickerText}".
+  Text Requirements: 
+  - Language: Traditional Chinese (繁體中文).
+  - Style: Cute, bold, "HANDWRITTEN" (手寫風格).
+  - Placement: Text must be clearly visible and integrated into each of the 12 frames.
+  Canvas Layout: 4 columns x 3 rows.
+  Aspect Ratio: 16:9.
+  Background: Pure White.`;
 
   try {
     const response = await ai.models.generateContent({
