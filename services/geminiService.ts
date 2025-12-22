@@ -3,29 +3,11 @@ import { GoogleGenAI } from "@google/genai";
 
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 
-/**
- * 驗證當前金鑰是否具備 Gemini 3 Pro 存取權限
- */
-export const verifyModelAccess = async (): Promise<boolean> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  try {
-    // 使用最小模型請求來驗證權限
-    await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: 'connection check',
-    });
-    return true;
-  } catch (error) {
-    console.error("Verification failed:", error);
-    return false;
-  }
-};
-
 export const generateCharacterOptions = async (
   referenceImages: string[],
   style: string
 ): Promise<string[]> => {
-  // 每次調用都重新建立實例以獲取最新 key
+  // 建立實例時直接使用自動注入的 process.env.API_KEY
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const results: string[] = [];
   
@@ -61,7 +43,8 @@ export const generateCharacterOptions = async (
         }
       }
     } catch (error: any) {
-      if (error.message?.includes("entity was not found")) {
+      // 如果發生權限錯誤，拋出特定異常讓 UI 捕捉
+      if (error.message?.includes("entity was not found") || error.message?.includes("404")) {
         throw new Error("KEY_EXPIRED");
       }
       throw error;
@@ -100,7 +83,9 @@ export const generateStickerGrid = async (
       }
     }
   } catch (error: any) {
-    if (error.message?.includes("entity was not found")) throw new Error("KEY_EXPIRED");
+    if (error.message?.includes("entity was not found") || error.message?.includes("404")) {
+      throw new Error("KEY_EXPIRED");
+    }
     throw error;
   }
   return null;
