@@ -1,12 +1,15 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-// Nano Banana Pro (Gemini 3 Pro Flagship)
+// 使用旗艦影像模型
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 
 const getClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API_KEY_MISSING");
+  // 優先檢查全域 window 上的 process.env (用於手動套用的金鑰)
+  const apiKey = (window as any).process?.env?.API_KEY || process.env.API_KEY;
+  if (!apiKey || apiKey.length < 10) {
+    throw new Error("API_KEY_MISSING");
+  }
   return new GoogleGenAI({ apiKey });
 };
 
@@ -17,11 +20,10 @@ export const generateCharacterOptions = async (
   const ai = getClient();
   const results: string[] = [];
   
-  // Prompting strategy for consistent characters in Gemini 3 Pro
   const prompts = [
-    `Create a high-quality character sheet, front view, character based on the reference images. Full body, pure white background. Artistic Style: ${style}. High consistency.`,
-    `A happy version of the same character from reference images, waving at the viewer. Pure white background, Style: ${style}.`,
-    `A character in a thoughtful pose, identical appearance to the reference. Clean white background, Style: ${style}.`
+    `Create a high-quality character sheet, front view, based on the reference images. Full body, pure white background. Artistic Style: ${style}. High consistency.`,
+    `A happy version of the same character, waving. Pure white background, Style: ${style}.`,
+    `A thoughtful pose of the character, identical appearance. White background, Style: ${style}.`
   ];
 
   for (const prompt of prompts) {
@@ -39,21 +41,16 @@ export const generateCharacterOptions = async (
           parts: [...imageParts, { text: prompt }]
         },
         config: { 
-          imageConfig: { 
-            aspectRatio: "1:1",
-            imageSize: "1K" // Pro model flagship quality
-          } 
+          imageConfig: { aspectRatio: "1:1", imageSize: "1K" } 
         }
       });
 
-      if (response.candidates?.[0]?.content?.parts) {
-        const imagePart = response.candidates[0].content.parts.find(p => p.inlineData);
-        if (imagePart?.inlineData) {
-          results.push(`data:image/png;base64,${imagePart.inlineData.data}`);
-        }
+      const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+      if (imagePart?.inlineData) {
+        results.push(`data:image/png;base64,${imagePart.inlineData.data}`);
       }
     } catch (error: any) {
-      console.error("Gemini Pro Image Generation Error:", error);
+      console.error("Character Gen Error:", error);
       throw error;
     }
   }
@@ -67,15 +64,15 @@ export const generateStickerGrid = async (
 ): Promise<string | null> => {
   const ai = getClient();
   
-  // Advanced prompt for Gemini 3 Pro to handle grid layout and Traditional Chinese text
-  const prompt = `Task: Generate a 4x3 grid (total 12 distinct stickers) of the EXACT same character provided in the image.
-  Requirement: Extremely high visual consistency for the character across all 12 frames.
+  // 強化 Prompt：要求 4x3 佈局、16:9 比例、繁體中文手寫風格
+  const prompt = `Task: Generate a 4x3 grid (total 12 distinct stickers) of the EXACT same character.
   Atmosphere: ${stickerAdjectives}.
+  Layout: 4 columns and 3 rows (4x3 grid), filling the 16:9 canvas.
   Language: Traditional Chinese (繁體中文).
-  Text: Each of the 12 stickers must include one unique phrase from this list: ${stickerText}.
-  Typography: Write the text in a bold, cute, hand-drawn style inside each frame.
-  Background: Pure white background for easy transparency.
-  Layout: Organize as a neat 4x3 sticker sheet.`;
+  Text content: Use these phrases: ${stickerText}.
+  Visual Style: Handwritten, bold, cute Traditional Chinese text integrated into each sticker frame.
+  Background: Pure white background.
+  Consistency: Character must look identical in all 12 frames.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -89,19 +86,17 @@ export const generateStickerGrid = async (
       config: { 
         imageConfig: { 
           aspectRatio: "16:9",
-          imageSize: "1K" // Flagship quality for the final grid
+          imageSize: "1K" 
         } 
       }
     });
 
-    if (response.candidates?.[0]?.content?.parts) {
-      const imagePart = response.candidates[0].content.parts.find(p => p.inlineData);
-      if (imagePart?.inlineData) {
-        return `data:image/png;base64,${imagePart.inlineData.data}`;
-      }
+    const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    if (imagePart?.inlineData) {
+      return `data:image/png;base64,${imagePart.inlineData.data}`;
     }
   } catch (error: any) {
-    console.error("Gemini Pro Grid Generation Error:", error);
+    console.error("Grid Gen Error:", error);
     throw error;
   }
   return null;
