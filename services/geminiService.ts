@@ -3,18 +3,23 @@ import { GoogleGenAI } from "@google/genai";
 
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 
+const getClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("KEY_EXPIRED");
+  return new GoogleGenAI({ apiKey });
+};
+
 export const generateCharacterOptions = async (
   referenceImages: string[],
   style: string
 ): Promise<string[]> => {
-  // 建立實例時直接使用自動注入的 process.env.API_KEY
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getClient();
   const results: string[] = [];
   
   const prompts = [
-    `Generate a consistent character based on the reference images. Standard front view, white background. Style: ${style}`,
-    `Generate the same character from the references in a 3/4 side view. Style: ${style}`,
-    `Generate the reference character with a happy and energetic expression. Style: ${style}`
+    `Generate a consistent character based on the reference images. Character sheet style, front view, pure white background. Style: ${style}`,
+    `Generate the same character from the references, smiling and waving, pure white background. Style: ${style}`,
+    `Generate the character in a thinking pose with a lightbulb above head, pure white background. Style: ${style}`
   ];
 
   for (const prompt of prompts) {
@@ -43,7 +48,6 @@ export const generateCharacterOptions = async (
         }
       }
     } catch (error: any) {
-      // 如果發生權限錯誤，拋出特定異常讓 UI 捕捉
       if (error.message?.includes("entity was not found") || error.message?.includes("404")) {
         throw new Error("KEY_EXPIRED");
       }
@@ -58,12 +62,14 @@ export const generateStickerGrid = async (
   stickerText: string,
   stickerAdjectives: string
 ): Promise<string | null> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const prompt = `Task: Create a 4x3 LINE sticker grid (12 individual stickers) of the character provided.
-  Layout: 16:9 aspect ratio. Background: Pure white.
-  Character Consistency: Same character in all 12 stickers.
-  Expressions: ${stickerAdjectives}.
-  Text: Write these phrases in playful HANDWRITTEN TRADITIONAL CHINESE (繁體中文) inside each sticker: ${stickerText}.`;
+  const ai = getClient();
+  const prompt = `Create a 4x3 grid (total 12 stickers) of the character provided.
+  Layout: 16:9 aspect ratio, pure white background.
+  Strict Character Consistency: Use the exact SAME character for ALL 12 frames.
+  Emotions: ${stickerAdjectives}.
+  Text Content: Each of the 12 stickers must contain one of these phrases: ${stickerText}.
+  Typography: Use bold, playful HANDWRITTEN TRADITIONAL CHINESE (繁體中文) for the text, integrated into each sticker frame.
+  Art Style: Consistent with the provided character image.`;
 
   try {
     const response = await ai.models.generateContent({
