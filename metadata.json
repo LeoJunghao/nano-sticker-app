@@ -1,0 +1,5 @@
+{
+  "name": "Nano Banana Line Sticker Agent",
+  "description": "Create consistent character LINE stickers using Gemini 2.5 Flash Image with handwritten Traditional Chinese text.",
+  "requestFramePermissions": []
+}
