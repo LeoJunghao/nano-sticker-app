@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { GenerationStep, AppState, CharacterOption } from './types';
-import { generateCharacterOptions, generateStickerGrid, verifyModelAccess } from './services/geminiService';
+import { generateCharacterOptions, generateStickerGrid } from './services/geminiService';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -19,35 +19,40 @@ const App: React.FC = () => {
 
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // 初始化時檢查金鑰狀態
+  // 監測是否已經有金鑰，如果有則自動進入
   useEffect(() => {
-    const checkInitialKey = async () => {
+    const checkKey = async () => {
       // @ts-ignore
       if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
-        await handleKeyVerification();
+        setState(prev => ({ ...prev, step: GenerationStep.Upload }));
       }
     };
-    checkInitialKey();
+    checkKey();
   }, []);
-
-  const handleKeyVerification = async () => {
-    setIsVerifying(true);
-    setState(prev => ({ ...prev, error: null }));
-    const success = await verifyModelAccess();
-    if (success) {
-      setState(prev => ({ ...prev, step: GenerationStep.Upload }));
-    } else {
-      setState(prev => ({ ...prev, error: "金鑰驗證失敗。請確保選取的 API 金鑰來自已啟用計費的 GCP 專案，且支援 Gemini 3 Pro。" }));
-    }
-    setIsVerifying(false);
-  };
 
   const handleOpenKeyDialog = async () => {
     // @ts-ignore
     if (window.aistudio) {
-      // @ts-ignore
-      await window.aistudio.openSelectKey();
-      await handleKeyVerification();
+      try {
+        setIsVerifying(true);
+        // @ts-ignore
+        await window.aistudio.openSelectKey();
+        
+        // 重要：根據規範，呼叫 openSelectKey 後應立即進入 App
+        // 不要等待驗證，因為 hasSelectedApiKey 在此時可能還沒更新
+        setState(prev => ({ 
+          ...prev, 
+          step: GenerationStep.Upload, 
+          error: null 
+        }));
+      } catch (e) {
+        setState(prev => ({ ...prev, error: "無法啟動金鑰選擇器，請檢查瀏覽器設定。" }));
+      } finally {
+        setIsVerifying(false);
+      }
+    } else {
+      // 如果不在 AI Studio 環境（例如本地開發），直接進入 Upload 階段
+      setState(prev => ({ ...prev, step: GenerationStep.Upload }));
     }
   };
 
@@ -75,10 +80,16 @@ const App: React.FC = () => {
       const options: CharacterOption[] = urls.map((url, idx) => ({ id: `char-${idx}`, url, base64: url }));
       setState(prev => ({ ...prev, characterOptions: options, step: GenerationStep.CharacterSelection, isLoading: false }));
     } catch (err: any) {
-      if (err.message === "KEY_EXPIRED") {
-        setState(prev => ({ ...prev, step: GenerationStep.KeySetup, isLoading: false, error: "金鑰權限過期或無效，請重新選取。" }));
+      console.error(err);
+      if (err.message === "KEY_EXPIRED" || err.message.includes("not found")) {
+        setState(prev => ({ 
+          ...prev, 
+          step: GenerationStep.KeySetup, 
+          isLoading: false, 
+          error: "API 金鑰無權限。請確保選取的是具備付費方案的 Google Cloud 專案金鑰。" 
+        }));
       } else {
-        setState(prev => ({ ...prev, error: "生成原型失敗，請檢查網路或金鑰狀態", isLoading: false }));
+        setState(prev => ({ ...prev, error: "生成原型失敗，請確保您的金鑰可使用 Gemini 3 Pro 模型。", isLoading: false }));
       }
     }
   };
@@ -94,33 +105,32 @@ const App: React.FC = () => {
       const gridUrl = await generateStickerGrid(state.selectedCharacter.base64, state.stickerText, state.stickerAdjectives);
       setState(prev => ({ ...prev, finalGridUrl: gridUrl, step: GenerationStep.FinalResult, isLoading: false }));
     } catch (err: any) {
-      if (err.message === "KEY_EXPIRED") {
-        setState(prev => ({ ...prev, step: GenerationStep.KeySetup, isLoading: false, error: "金鑰權限過期或無效，請重新選取。" }));
+      if (err.message === "KEY_EXPIRED" || err.message.includes("not found")) {
+        setState(prev => ({ ...prev, step: GenerationStep.KeySetup, isLoading: false, error: "金鑰已過期或權限不足。" }));
       } else {
-        setState(prev => ({ ...prev, error: "貼圖生成失敗，請稍後再試", isLoading: false }));
+        setState(prev => ({ ...prev, error: "貼圖生成失敗，模型回應異常", isLoading: false }));
       }
     }
   };
 
-  // --- 渲染各階段內容 ---
-
+  // --- 渲染部分保持不變，但在 KeySetup 增加錯誤顯示 ---
   if (state.step === GenerationStep.KeySetup) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100 p-6">
         <div className="max-w-lg w-full bg-white rounded-3xl shadow-2xl p-10 border border-white/50 backdrop-blur-sm">
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-6 animate-pulse">
+            <div className="w-20 h-20 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-6">
               <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
               </svg>
             </div>
-            <h1 className="text-3xl font-black text-gray-900 mb-4">歡迎使用 Nano Banana</h1>
-            <p className="text-gray-500">本應用程式需調用 Gemini 3 Pro 旗艦模型，請先選取具備 Pro 權限的 API 金鑰。</p>
+            <h1 className="text-3xl font-black text-gray-900 mb-4">啟動 Nano Banana</h1>
+            <p className="text-gray-500">請點擊下方按鈕選取您的 API 金鑰以繼續。系統將使用 Gemini 3 Pro 進行創作。</p>
           </div>
 
           {state.error && (
             <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-8 rounded-r-xl">
-              <p className="text-red-700 text-sm font-medium">{state.error}</p>
+              <p className="text-red-700 text-sm font-bold">{state.error}</p>
             </div>
           )}
 
@@ -128,28 +138,12 @@ const App: React.FC = () => {
             <button 
               onClick={handleOpenKeyDialog}
               disabled={isVerifying}
-              className={`w-full py-4 px-6 rounded-2xl font-bold text-lg transition-all transform active:scale-95 flex items-center justify-center gap-3 ${
-                isVerifying ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200'
-              }`}
+              className={`w-full py-4 px-6 rounded-2xl font-bold text-lg transition-all transform active:scale-95 flex items-center justify-center gap-3 bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200`}
             >
-              {isVerifying ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-indigo-400 border-t-white rounded-full animate-spin"></div>
-                  權限驗證中...
-                </>
-              ) : (
-                <>
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" /></svg>
-                  啟動並選取 API 金鑰
-                </>
-              )}
+              {isVerifying ? '啟動中...' : '啟動並選取 API 金鑰'}
             </button>
             <div className="text-center">
-              <a 
-                href="https://ai.google.dev/gemini-api/docs/billing" 
-                target="_blank" 
-                className="text-indigo-600 hover:text-indigo-800 text-sm font-bold underline"
-              >
+              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-indigo-600 hover:text-indigo-800 text-sm font-bold underline">
                 如何獲取付費專案金鑰？
               </a>
             </div>
@@ -159,6 +153,7 @@ const App: React.FC = () => {
     );
   }
 
+  // ... 剩餘的渲染代碼與之前相同 ...
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <header className="flex items-center justify-between mb-12">
@@ -304,7 +299,6 @@ const App: React.FC = () => {
               重新製作
             </button>
           </div>
-          <p className="mt-8 text-gray-400 text-sm italic">提示：您可以使用裁切工具將此 4x3 網格切分為 12 張獨立貼圖上傳至 LINE Creators Market。</p>
         </div>
       )}
     </div>
