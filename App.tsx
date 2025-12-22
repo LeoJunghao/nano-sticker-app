@@ -27,17 +27,24 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkKey = async () => {
-      // @ts-ignore - window.aistudio is injected
-      const selected = await window.aistudio.hasSelectedApiKey();
-      setHasKey(selected);
+      // @ts-ignore
+      if (window.aistudio) {
+        // @ts-ignore
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasKey(selected);
+      }
     };
     checkKey();
   }, []);
 
   const handleOpenKeyDialog = async () => {
     // @ts-ignore
-    await window.aistudio.openSelectKey();
-    setHasKey(true);
+    if (window.aistudio) {
+      // @ts-ignore
+      await window.aistudio.openSelectKey();
+      // 根據指令：觸發後直接假定成功以避免 race condition
+      setHasKey(true);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,11 +86,12 @@ const App: React.FC = () => {
         isLoading: false 
       }));
     } catch (err: any) {
-      if (err.message === "KEY_NOT_FOUND") {
+      console.error(err);
+      if (err.message === "KEY_NOT_FOUND" || err.message?.includes("entity was not found")) {
         setHasKey(false);
-        setState(prev => ({ ...prev, isLoading: false, error: "API 金鑰無效，請重新選擇。" }));
+        setState(prev => ({ ...prev, isLoading: false, error: "API 金鑰無效或未選取，請重新設定。" }));
       } else {
-        setState(prev => ({ ...prev, error: "生成角色失敗，請檢查網路或金鑰狀態", isLoading: false }));
+        setState(prev => ({ ...prev, error: "生成角色失敗，請檢查金鑰是否有餘額或網路狀態", isLoading: false }));
       }
     }
   };
@@ -104,11 +112,11 @@ const App: React.FC = () => {
         isLoading: false 
       }));
     } catch (err: any) {
-      if (err.message === "KEY_NOT_FOUND") {
+      if (err.message === "KEY_NOT_FOUND" || err.message?.includes("entity was not found")) {
         setHasKey(false);
-        setState(prev => ({ ...prev, isLoading: false, error: "API 金鑰無效，請重新選擇。" }));
+        setState(prev => ({ ...prev, isLoading: false, error: "金鑰失效，請重新選取付費專案金鑰。" }));
       } else {
-        setState(prev => ({ ...prev, error: "生成貼圖失敗，請稍後再試", isLoading: false }));
+        setState(prev => ({ ...prev, error: "生成貼圖失敗，可能是 Token 限制或網路問題", isLoading: false }));
       }
     }
   };
@@ -144,9 +152,16 @@ const App: React.FC = () => {
             </svg>
           </div>
           <h2 className="text-2xl font-bold text-gray-800 mb-4">需要 Gemini 3 Pro 權限</h2>
-          <p className="text-gray-600 mb-8 leading-relaxed text-sm">
-            此應用程式使用 <b>Gemini 3 Pro Image</b>。請點擊下方按鈕選取您的 API 金鑰。
+          <p className="text-gray-600 mb-4 leading-relaxed text-sm">
+            本應用程式使用高階 <b>Gemini 3 Pro Image</b> 模型。
           </p>
+          <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl mb-8 text-left">
+            <p className="text-xs text-amber-800 font-medium mb-2">💡 重要事項：</p>
+            <p className="text-xs text-amber-700 leading-relaxed">
+              您必須從具備結算功能的付費 GCP 專案選取 API 金鑰。詳細請參考 
+              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline font-bold ml-1">帳單文件</a>。
+            </p>
+          </div>
           <button 
             onClick={handleOpenKeyDialog}
             className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
@@ -196,7 +211,7 @@ const App: React.FC = () => {
             <div className="absolute inset-0 border-4 border-indigo-600 rounded-full border-t-transparent animate-spin"></div>
           </div>
           <p className="text-indigo-600 font-bold text-2xl mb-2">Gemini 3 Pro 正在生成中...</p>
-          <p className="text-gray-500 max-w-sm">正在精心鑄造角色表情與文字，請稍候。</p>
+          <p className="text-gray-500 max-w-sm">正在精心鑄造角色表情與文字，預計需時 30-60 秒，請勿關閉視窗。</p>
         </div>
       )}
 
