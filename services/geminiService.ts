@@ -3,20 +3,30 @@ import { GoogleGenAI } from "@google/genai";
 
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 
-const getApiKey = () => {
-  // 優先讀取墊片中的值
-  const key = (window as any).process?.env?.API_KEY || process.env.API_KEY;
-  if (!key) {
-    throw new Error("KEY_NOT_FOUND");
+/**
+ * 驗證當前金鑰是否具備 Gemini 3 Pro 存取權限
+ */
+export const verifyModelAccess = async (): Promise<boolean> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  try {
+    // 使用最小模型請求來驗證權限
+    await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: 'connection check',
+    });
+    return true;
+  } catch (error) {
+    console.error("Verification failed:", error);
+    return false;
   }
-  return key;
 };
 
 export const generateCharacterOptions = async (
   referenceImages: string[],
   style: string
 ): Promise<string[]> => {
-  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  // 每次調用都重新建立實例以獲取最新 key
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const results: string[] = [];
   
   const prompts = [
@@ -51,8 +61,8 @@ export const generateCharacterOptions = async (
         }
       }
     } catch (error: any) {
-      if (error.message?.includes("entity was not found") || error.message?.includes("API key not found")) {
-        throw new Error("KEY_NOT_FOUND");
+      if (error.message?.includes("entity was not found")) {
+        throw new Error("KEY_EXPIRED");
       }
       throw error;
     }
@@ -65,7 +75,7 @@ export const generateStickerGrid = async (
   stickerText: string,
   stickerAdjectives: string
 ): Promise<string | null> => {
-  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const prompt = `Task: Create a 4x3 LINE sticker grid (12 individual stickers) of the character provided.
   Layout: 16:9 aspect ratio. Background: Pure white.
   Character Consistency: Same character in all 12 stickers.
@@ -90,7 +100,7 @@ export const generateStickerGrid = async (
       }
     }
   } catch (error: any) {
-    if (error.message?.includes("entity was not found")) throw new Error("KEY_NOT_FOUND");
+    if (error.message?.includes("entity was not found")) throw new Error("KEY_EXPIRED");
     throw error;
   }
   return null;
