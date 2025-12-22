@@ -4,12 +4,24 @@ import { GoogleGenAI } from "@google/genai";
 // 升級至 Gemini 3 Pro 影像模型
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 
+/**
+ * 取得當前環境中的 API KEY
+ * 優先順序：process.env.API_KEY -> 拋出錯誤
+ */
+const getApiKey = () => {
+  const key = process.env.API_KEY;
+  if (!key) {
+    throw new Error("KEY_NOT_FOUND");
+  }
+  return key;
+};
+
 export const generateCharacterOptions = async (
   referenceImages: string[],
   style: string
 ): Promise<string[]> => {
   // 規則要求：在 API 呼叫前才建立實例，確保使用最新的 API KEY
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: getApiKey() });
   
   const results: string[] = [];
   
@@ -54,8 +66,8 @@ export const generateCharacterOptions = async (
       }
     } catch (error: any) {
       console.error("Generation error:", error);
-      // 如果是金鑰問題，將錯誤拋出由 UI 處理
-      if (error.message?.includes("Requested entity was not found")) {
+      // 如果是金鑰問題或 404 (找不到 Entity)，通常代表 Key 沒選好或權限不足
+      if (error.message?.includes("Requested entity was not found") || error.message?.includes("API key not found")) {
         throw new Error("KEY_NOT_FOUND");
       }
       throw error;
@@ -70,7 +82,7 @@ export const generateStickerGrid = async (
   stickerText: string,
   stickerAdjectives: string
 ): Promise<string | null> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: getApiKey() });
   
   const prompt = `Task: Create a 4x3 LINE sticker grid (12 individual stickers) of the character provided.
   Layout: 16:9 aspect ratio.
@@ -109,7 +121,7 @@ export const generateStickerGrid = async (
       }
     }
   } catch (error: any) {
-    if (error.message?.includes("Requested entity was not found")) {
+    if (error.message?.includes("Requested entity was not found") || error.message?.includes("API key not found")) {
       throw new Error("KEY_NOT_FOUND");
     }
     throw error;
