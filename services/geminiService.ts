@@ -5,8 +5,9 @@ import { GoogleGenAI } from "@google/genai";
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 
 const getClient = () => {
-  // 優先檢查全域 window 上的 process.env (用於手動套用的金鑰)
-  const apiKey = (window as any).process?.env?.API_KEY || process.env.API_KEY;
+  // 強制從全域 window 讀取，避免 Vite 在 build 階段將 process.env.API_KEY 替換成 undefined
+  const apiKey = (window as any).process?.env?.API_KEY;
+  
   if (!apiKey || apiKey.length < 10) {
     throw new Error("API_KEY_MISSING");
   }
@@ -64,7 +65,6 @@ export const generateStickerGrid = async (
 ): Promise<string | null> => {
   const ai = getClient();
   
-  // 強化 Prompt：要求 4x3 佈局、16:9 比例、繁體中文手寫風格
   const prompt = `Task: Generate a 4x3 grid (total 12 distinct stickers) of the EXACT same character.
   Atmosphere: ${stickerAdjectives}.
   Layout: 4 columns and 3 rows (4x3 grid), filling the 16:9 canvas.
