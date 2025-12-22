@@ -6,19 +6,20 @@ export interface CharacterOption {
 }
 
 export interface AppState {
-  step: number;
-  referenceImages: string[]; // base64
+  step: GenerationStep;
+  referenceImages: string[]; 
   style: string;
   characterOptions: CharacterOption[];
   selectedCharacter: CharacterOption | null;
   stickerText: string;
-  stickerAdjectives: string; // Added for expression descriptions
+  stickerAdjectives: string;
   finalGridUrl: string | null;
   isLoading: boolean;
   error: string | null;
 }
 
 export enum GenerationStep {
+  KeySetup = 0,
   Upload = 1,
   CharacterSelection = 2,
   TextEntry = 3,

@@ -1,12 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { GenerationStep, AppState, CharacterOption } from './types';
-import { generateCharacterOptions, generateStickerGrid } from './services/geminiService';
+import { generateCharacterOptions, generateStickerGrid, verifyModelAccess } from './services/geminiService';
 
 const App: React.FC = () => {
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [state, setState] = useState<AppState>({
-    step: GenerationStep.Upload,
+    step: GenerationStep.KeySetup,
     referenceImages: [],
     style: "2D Q版擬真圖",
     characterOptions: [],
@@ -18,39 +17,43 @@ const App: React.FC = () => {
     error: null,
   });
 
-  const styleSuggestions = [
-    "超擬真彩色鉛筆素描風格",
-    "Q版誇張諷刺畫（Caricature 美式漫畫畫風）",
-    "2D Q版擬真圖",
-    "3D Q版擬真圖"
-  ];
+  const [isVerifying, setIsVerifying] = useState(false);
 
+  // 初始化時檢查金鑰狀態
   useEffect(() => {
-    const checkKey = async () => {
+    const checkInitialKey = async () => {
       // @ts-ignore
-      if (window.aistudio) {
-        // @ts-ignore
-        const selected = await window.aistudio.hasSelectedApiKey();
-        setHasKey(selected);
+      if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
+        await handleKeyVerification();
       }
     };
-    checkKey();
+    checkInitialKey();
   }, []);
+
+  const handleKeyVerification = async () => {
+    setIsVerifying(true);
+    setState(prev => ({ ...prev, error: null }));
+    const success = await verifyModelAccess();
+    if (success) {
+      setState(prev => ({ ...prev, step: GenerationStep.Upload }));
+    } else {
+      setState(prev => ({ ...prev, error: "金鑰驗證失敗。請確保選取的 API 金鑰來自已啟用計費的 GCP 專案，且支援 Gemini 3 Pro。" }));
+    }
+    setIsVerifying(false);
+  };
 
   const handleOpenKeyDialog = async () => {
     // @ts-ignore
     if (window.aistudio) {
       // @ts-ignore
       await window.aistudio.openSelectKey();
-      // 根據指令：觸發後直接假定成功以避免 race condition
-      setHasKey(true);
+      await handleKeyVerification();
     }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-
     const fileList = Array.from(files).slice(0, 5) as File[];
     const promises = fileList.map(file => {
       return new Promise<string>((resolve) => {
@@ -59,39 +62,23 @@ const App: React.FC = () => {
         reader.readAsDataURL(file);
       });
     });
-
     Promise.all(promises).then(base64Images => {
       setState(prev => ({ ...prev, referenceImages: base64Images }));
     });
   };
 
   const handleGenerateCharacters = async () => {
-    if (state.referenceImages.length === 0) {
-      setState(prev => ({ ...prev, error: "請先上傳至少一張原圖" }));
-      return;
-    }
-
+    if (state.referenceImages.length === 0) return;
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     try {
       const urls = await generateCharacterOptions(state.referenceImages, state.style);
-      const options: CharacterOption[] = urls.map((url, idx) => ({
-        id: `char-${idx}`,
-        url,
-        base64: url
-      }));
-      setState(prev => ({ 
-        ...prev, 
-        characterOptions: options, 
-        step: GenerationStep.CharacterSelection,
-        isLoading: false 
-      }));
+      const options: CharacterOption[] = urls.map((url, idx) => ({ id: `char-${idx}`, url, base64: url }));
+      setState(prev => ({ ...prev, characterOptions: options, step: GenerationStep.CharacterSelection, isLoading: false }));
     } catch (err: any) {
-      console.error(err);
-      if (err.message === "KEY_NOT_FOUND" || err.message?.includes("entity was not found")) {
-        setHasKey(false);
-        setState(prev => ({ ...prev, isLoading: false, error: "API 金鑰無效或未選取，請重新設定。" }));
+      if (err.message === "KEY_EXPIRED") {
+        setState(prev => ({ ...prev, step: GenerationStep.KeySetup, isLoading: false, error: "金鑰權限過期或無效，請重新選取。" }));
       } else {
-        setState(prev => ({ ...prev, error: "生成角色失敗，請檢查金鑰是否有餘額或網路狀態", isLoading: false }));
+        setState(prev => ({ ...prev, error: "生成原型失敗，請檢查網路或金鑰狀態", isLoading: false }));
       }
     }
   };
@@ -105,69 +92,68 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     try {
       const gridUrl = await generateStickerGrid(state.selectedCharacter.base64, state.stickerText, state.stickerAdjectives);
-      setState(prev => ({ 
-        ...prev, 
-        finalGridUrl: gridUrl, 
-        step: GenerationStep.FinalResult,
-        isLoading: false 
-      }));
+      setState(prev => ({ ...prev, finalGridUrl: gridUrl, step: GenerationStep.FinalResult, isLoading: false }));
     } catch (err: any) {
-      if (err.message === "KEY_NOT_FOUND" || err.message?.includes("entity was not found")) {
-        setHasKey(false);
-        setState(prev => ({ ...prev, isLoading: false, error: "金鑰失效，請重新選取付費專案金鑰。" }));
+      if (err.message === "KEY_EXPIRED") {
+        setState(prev => ({ ...prev, step: GenerationStep.KeySetup, isLoading: false, error: "金鑰權限過期或無效，請重新選取。" }));
       } else {
-        setState(prev => ({ ...prev, error: "生成貼圖失敗，可能是 Token 限制或網路問題", isLoading: false }));
+        setState(prev => ({ ...prev, error: "貼圖生成失敗，請稍後再試", isLoading: false }));
       }
     }
   };
 
-  const goBack = () => {
-    if (state.step > GenerationStep.Upload) {
-      setState(prev => ({ ...prev, step: prev.step - 1, error: null }));
-    }
-  };
+  // --- 渲染各階段內容 ---
 
-  const reset = () => {
-    setState({
-      step: GenerationStep.Upload,
-      referenceImages: [],
-      style: "2D Q版擬真圖",
-      characterOptions: [],
-      selectedCharacter: null,
-      stickerText: "早安, 謝謝, 辛苦了, 讚啦, 沒問題, 傻眼, 哭哭, 哈哈, 忙碌中, 想你, 拜託, 晚安",
-      stickerAdjectives: "逗趣, 誇張表情, 充滿活力, 搞怪",
-      finalGridUrl: null,
-      isLoading: false,
-      error: null,
-    });
-  };
-
-  if (hasKey === false) {
+  if (state.step === GenerationStep.KeySetup) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 text-center border border-indigo-50">
-          <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-10 h-10 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-            </svg>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100 p-6">
+        <div className="max-w-lg w-full bg-white rounded-3xl shadow-2xl p-10 border border-white/50 backdrop-blur-sm">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-6 animate-pulse">
+              <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+            </div>
+            <h1 className="text-3xl font-black text-gray-900 mb-4">歡迎使用 Nano Banana</h1>
+            <p className="text-gray-500">本應用程式需調用 Gemini 3 Pro 旗艦模型，請先選取具備 Pro 權限的 API 金鑰。</p>
           </div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-4">需要 Gemini 3 Pro 權限</h2>
-          <p className="text-gray-600 mb-4 leading-relaxed text-sm">
-            本應用程式使用高階 <b>Gemini 3 Pro Image</b> 模型。
-          </p>
-          <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl mb-8 text-left">
-            <p className="text-xs text-amber-800 font-medium mb-2">💡 重要事項：</p>
-            <p className="text-xs text-amber-700 leading-relaxed">
-              您必須從具備結算功能的付費 GCP 專案選取 API 金鑰。詳細請參考 
-              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline font-bold ml-1">帳單文件</a>。
-            </p>
+
+          {state.error && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-8 rounded-r-xl">
+              <p className="text-red-700 text-sm font-medium">{state.error}</p>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <button 
+              onClick={handleOpenKeyDialog}
+              disabled={isVerifying}
+              className={`w-full py-4 px-6 rounded-2xl font-bold text-lg transition-all transform active:scale-95 flex items-center justify-center gap-3 ${
+                isVerifying ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200'
+              }`}
+            >
+              {isVerifying ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-indigo-400 border-t-white rounded-full animate-spin"></div>
+                  權限驗證中...
+                </>
+              ) : (
+                <>
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" /></svg>
+                  啟動並選取 API 金鑰
+                </>
+              )}
+            </button>
+            <div className="text-center">
+              <a 
+                href="https://ai.google.dev/gemini-api/docs/billing" 
+                target="_blank" 
+                className="text-indigo-600 hover:text-indigo-800 text-sm font-bold underline"
+              >
+                如何獲取付費專案金鑰？
+              </a>
+            </div>
           </div>
-          <button 
-            onClick={handleOpenKeyDialog}
-            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
-          >
-            設定並選取 API 金鑰
-          </button>
         </div>
       </div>
     );
@@ -175,158 +161,86 @@ const App: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
-      <header className="text-center mb-12">
-        <h1 className="text-4xl font-extrabold text-indigo-600 mb-2">Nano Banana LINE 貼圖代理</h1>
-        <div className="flex items-center justify-center gap-2">
-          <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Gemini 3 Pro Image</span>
-          <p className="text-gray-600">一致性角色與表情包生成</p>
+      <header className="flex items-center justify-between mb-12">
+        <div>
+          <h1 className="text-3xl font-extrabold text-gray-900">Nano Banana <span className="text-indigo-600">LINE Sticker Agent</span></h1>
+          <p className="text-gray-500">基於 Gemini 3 Pro 的一致性貼圖生成器</p>
         </div>
+        <button 
+          onClick={handleOpenKeyDialog}
+          className="px-4 py-2 bg-white border-2 border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:border-indigo-200 hover:text-indigo-600 transition-colors"
+        >
+          切換金鑰
+        </button>
       </header>
 
-      {/* Progress Stepper */}
-      <div className="flex justify-between items-center mb-12 px-4 relative">
-        <div className="absolute top-1/2 left-0 w-full h-0.5 bg-gray-200 -z-10 transform -translate-y-1/2"></div>
-        {[1, 2, 3, 4].map((s) => (
-          <div 
-            key={s} 
-            className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all duration-300 ${
-              state.step >= s ? 'bg-indigo-600 text-white scale-110 shadow-lg' : 'bg-gray-200 text-gray-500'
-            }`}
-          >
-            {s}
-          </div>
-        ))}
-      </div>
-
       {state.error && (
-        <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded shadow-sm">
-          <p className="text-red-700 font-medium">{state.error}</p>
+        <div className="mb-8 bg-red-100 border border-red-200 text-red-700 px-6 py-4 rounded-2xl font-bold">
+          {state.error}
         </div>
       )}
 
       {state.isLoading && (
-        <div className="fixed inset-0 bg-white bg-opacity-90 z-50 flex flex-col items-center justify-center p-6 text-center">
-          <div className="relative w-24 h-24 mb-6">
-            <div className="absolute inset-0 border-4 border-indigo-100 rounded-full"></div>
-            <div className="absolute inset-0 border-4 border-indigo-600 rounded-full border-t-transparent animate-spin"></div>
+        <div className="fixed inset-0 bg-indigo-900/10 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-6 text-center">
+          <div className="w-20 h-20 bg-white rounded-3xl shadow-2xl flex items-center justify-center mb-6 animate-bounce">
+            <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
           </div>
-          <p className="text-indigo-600 font-bold text-2xl mb-2">Gemini 3 Pro 正在生成中...</p>
-          <p className="text-gray-500 max-w-sm">正在精心鑄造角色表情與文字，預計需時 30-60 秒，請勿關閉視窗。</p>
+          <h3 className="text-indigo-900 font-black text-2xl mb-2">正在與 Gemini 協作中...</h3>
+          <p className="text-indigo-800 opacity-70">正在鑄造一致性角色與生成貼圖網格，請保持頁面開啟。</p>
         </div>
       )}
 
-      {/* Step 1: Upload & Style */}
       {state.step === GenerationStep.Upload && (
-        <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 animate-fadeIn">
-          <h2 className="text-2xl font-bold mb-6 flex items-center">
-            <span className="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-full inline-flex items-center justify-center mr-3 text-sm">1</span>
-            上傳原圖 (1~5張)
-          </h2>
+        <div className="bg-white p-10 rounded-3xl shadow-xl shadow-gray-200/50 border border-gray-100">
           <div className="mb-8">
-            <label className="block w-full border-2 border-dashed border-indigo-200 rounded-xl p-12 text-center cursor-pointer hover:border-indigo-400 transition-colors bg-indigo-50/30 group">
-              <input 
-                type="file" 
-                multiple 
-                accept="image/*" 
-                onChange={handleFileUpload} 
-                className="hidden" 
-              />
-              <div className="flex flex-col items-center">
-                <svg className="w-12 h-12 text-indigo-400 group-hover:scale-110 transition-transform mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <p className="text-indigo-600 font-medium font-bold">點擊或拖放圖片</p>
-                <p className="text-gray-400 text-sm mt-1">上傳角色的參考照片，用於鑄造一致性角色</p>
-              </div>
-            </label>
-            {state.referenceImages.length > 0 && (
-              <div className="mt-6 flex flex-wrap gap-4">
-                {state.referenceImages.map((img, i) => (
-                  <div key={i} className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-indigo-100 shadow-sm">
-                    <img src={img} alt="Ref" className="w-full h-full object-cover" />
-                  </div>
-                ))}
-              </div>
-            )}
+            <h2 className="text-xl font-bold mb-2">第一步：定義你的角色</h2>
+            <p className="text-gray-500 text-sm">上傳 1-5 張角色的參考照片，AI 將學習其外觀特徵。</p>
           </div>
-
-          <h2 className="text-2xl font-bold mb-6 flex items-center">
-            <span className="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-full inline-flex items-center justify-center mr-3 text-sm">2</span>
-            輸入圖片風格
-          </h2>
+          <label className="block w-full border-4 border-dashed border-indigo-50 rounded-2xl p-16 text-center cursor-pointer mb-8 hover:bg-indigo-50/50 transition-colors group">
+            <input type="file" multiple accept="image/*" onChange={handleFileUpload} className="hidden" />
+            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+              <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
+            </div>
+            <p className="text-indigo-600 font-bold text-lg">{state.referenceImages.length > 0 ? `已選取 ${state.referenceImages.length} 張圖片` : '點擊或拖放圖片至此'}</p>
+          </label>
           <div className="mb-8">
+            <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">風格描述</label>
             <input 
               type="text" 
-              value={state.style}
+              value={state.style} 
               onChange={(e) => setState(prev => ({ ...prev, style: e.target.value }))}
-              placeholder="請輸入或選擇下方風格..."
-              className="w-full px-4 py-4 border-2 border-black rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all bg-white text-black font-bold text-lg"
+              className="w-full px-6 py-4 bg-gray-50 border-2 border-gray-100 focus:border-indigo-600 rounded-2xl outline-none transition-all font-bold"
+              placeholder="例如：2D Q版擬真圖, 水彩插畫風, 3D 渲染立體風..."
             />
-            
-            <div className="mt-4">
-              <p className="text-xs text-gray-500 mb-2 font-bold uppercase tracking-wider">風格推薦：</p>
-              <div className="flex flex-wrap gap-2">
-                {styleSuggestions.map((hint) => (
-                  <button
-                    key={hint}
-                    type="button"
-                    onClick={() => setState(prev => ({ ...prev, style: hint }))}
-                    className={`text-xs px-3 py-1.5 rounded-full border-2 transition-all shadow-sm ${
-                      state.style === hint 
-                        ? 'bg-black border-black text-white font-bold' 
-                        : 'bg-white border-black text-black hover:bg-gray-100'
-                    }`}
-                  >
-                    + {hint}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
-
           <button 
             onClick={handleGenerateCharacters}
             disabled={state.referenceImages.length === 0}
-            className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all ${
-              state.referenceImages.length === 0 
-                ? 'bg-gray-300 cursor-not-allowed' 
-                : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200 active:scale-[0.98]'
+            className={`w-full py-5 rounded-2xl font-black text-xl shadow-lg transition-all ${
+              state.referenceImages.length === 0 ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-100'
             }`}
           >
-            生成角色原型
+            鑄造角色原型
           </button>
         </div>
       )}
 
-      {/* Step 2: Character Selection */}
       {state.step === GenerationStep.CharacterSelection && (
-        <div className="animate-slideIn">
-          <div className="flex justify-between items-center mb-8">
-            <button 
-              onClick={goBack}
-              className="px-6 py-2 bg-gray-200 text-gray-700 rounded-full font-bold hover:bg-gray-300 transition-all flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-              </svg>
-              回到上一頁
-            </button>
-            <h2 className="text-2xl font-bold text-gray-800">請選擇一個角色原型</h2>
+        <div>
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-black mb-2">選取最滿意的原型</h2>
+            <p className="text-gray-500">選取一個做為貼圖包的基準角色。</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {state.characterOptions.map((char) => (
               <div 
                 key={char.id} 
-                className="group cursor-pointer bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all border-4 border-transparent hover:border-indigo-400"
+                className="group cursor-pointer bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-2xl transition-all border-4 border-transparent hover:border-indigo-600 transform hover:-translate-y-2" 
                 onClick={() => handleSelectCharacter(char)}
               >
-                <div className="aspect-square bg-gray-50 overflow-hidden">
-                  <img src={char.url} alt="Option" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                </div>
-                <div className="p-4 text-center">
-                  <span className="inline-block px-6 py-2 bg-indigo-50 text-indigo-600 rounded-full font-bold group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                    選擇此原型
-                  </span>
+                <img src={char.url} className="w-full aspect-square object-cover" />
+                <div className="p-4 text-center font-bold text-indigo-600 bg-indigo-50 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                  選擇此原型
                 </div>
               </div>
             ))}
@@ -334,119 +248,65 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Step 3: Text & Adjective Entry */}
       {state.step === GenerationStep.TextEntry && (
-        <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 animate-slideIn">
-          <div className="flex justify-between items-center mb-6">
-            <button 
-              onClick={goBack}
-              className="px-6 py-2 bg-gray-200 text-gray-700 rounded-full font-bold hover:bg-gray-300 transition-all flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-              </svg>
-              回到上一頁
-            </button>
-            <h2 className="text-2xl font-bold text-gray-800">配置貼圖內容</h2>
+        <div className="bg-white p-10 rounded-3xl shadow-xl border border-gray-100">
+          <div className="mb-8">
+            <h2 className="text-xl font-bold mb-2">設定貼圖包細節</h2>
+            <p className="text-gray-500 text-sm">編輯貼圖文字與整體的表情氛圍。</p>
           </div>
-
-          <div className="space-y-8">
+          <div className="space-y-6">
             <div>
-              <label className="block text-gray-700 mb-2 font-bold text-lg">表情包文案 (建議 12 個短語)</label>
+              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">貼圖文字內容 (逗號分隔)</label>
               <textarea 
-                rows={3}
-                value={state.stickerText}
-                onChange={(e) => setState(prev => ({ ...prev, stickerText: e.target.value }))}
-                className="w-full px-4 py-3 border-2 border-black rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all bg-white text-black font-bold"
+                value={state.stickerText} 
+                onChange={(e) => setState(prev => ({ ...prev, stickerText: e.target.value }))} 
+                className="w-full p-6 bg-gray-50 border-2 border-gray-100 focus:border-indigo-600 rounded-2xl outline-none transition-all font-bold min-h-[120px]"
               />
             </div>
-
             <div>
-              <label className="block text-gray-700 mb-2 font-bold text-lg">表情包形容詞 / 表情描述</label>
+              <label className="block text-sm font-black text-gray-700 mb-2 uppercase tracking-wider">表情與氛圍形容詞</label>
               <textarea 
+                value={state.stickerAdjectives} 
+                onChange={(e) => setState(prev => ({ ...prev, stickerAdjectives: e.target.value }))} 
+                className="w-full p-6 bg-gray-50 border-2 border-gray-100 focus:border-indigo-600 rounded-2xl outline-none transition-all font-bold" 
                 rows={2}
-                value={state.stickerAdjectives}
-                onChange={(e) => setState(prev => ({ ...prev, stickerAdjectives: e.target.value }))}
-                placeholder="例如：驚訝, 撒嬌, 大哭, 生氣..."
-                className="w-full px-4 py-3 border-2 border-black rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all bg-white text-black font-bold"
+                placeholder="例如：誇張、呆萌、愛生氣、超級熱情..."
               />
-              <p className="text-gray-400 text-sm mt-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                💡 形容詞將決定角色的表情細節。Gemini 3 Pro 會根據這些詞彙與文案產生具備情緒的貼圖。
-              </p>
             </div>
+            <button 
+              onClick={handleGenerateStickers} 
+              className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-xl hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all active:scale-95"
+            >
+              開始繪製 4x3 貼圖網格
+            </button>
           </div>
-
-          <button 
-            onClick={handleGenerateStickers}
-            className="w-full mt-10 py-4 bg-indigo-600 rounded-xl font-bold text-white shadow-lg hover:bg-indigo-700 transition-all active:scale-[0.98]"
-          >
-            開始鑄造 4x3 貼圖組合
-          </button>
         </div>
       )}
 
-      {/* Step 4: Final Result */}
       {state.step === GenerationStep.FinalResult && state.finalGridUrl && (
-        <div className="animate-fadeIn">
-          <div className="flex justify-between items-center mb-6">
-            <button 
-              onClick={goBack}
-              className="px-6 py-2 bg-gray-200 text-gray-700 rounded-full font-bold hover:bg-gray-300 transition-all flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-              </svg>
-              回到上一頁
-            </button>
-            <h2 className="text-2xl font-bold text-gray-800">生成結果</h2>
-          </div>
-
-          <div className="bg-white p-3 rounded-2xl shadow-2xl border border-gray-100 overflow-hidden mb-8">
-            <div className="relative group">
-               <img src={state.finalGridUrl} alt="Final Stickers" className="w-full h-auto rounded-xl" />
-               <div className="absolute top-4 right-4 bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-bold text-indigo-600 shadow-sm border border-indigo-100">
-                 16:9 品質產出
-               </div>
-            </div>
+        <div className="text-center">
+          <div className="bg-white p-4 rounded-3xl shadow-2xl inline-block mb-10 overflow-hidden border border-gray-100">
+            <img src={state.finalGridUrl} className="max-w-full rounded-2xl" />
           </div>
           <div className="flex flex-col md:flex-row gap-4 justify-center">
             <a 
               href={state.finalGridUrl} 
-              download="nano-banana-sticker-sheet.png"
-              className="px-10 py-4 bg-green-600 text-white rounded-xl font-bold shadow-lg hover:bg-green-700 transition-all text-center flex items-center justify-center"
+              download="nano-stickers.png" 
+              className="px-12 py-5 bg-green-600 text-white rounded-2xl font-black text-xl hover:bg-green-700 shadow-lg shadow-green-100 transition-all flex items-center justify-center gap-2"
             >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              下載貼圖組合
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              下載貼圖組合圖
             </a>
             <button 
-              onClick={reset}
-              className="px-10 py-4 bg-indigo-100 text-indigo-700 rounded-xl font-bold hover:bg-indigo-200 transition-all text-center"
+              onClick={() => setState(prev => ({ ...prev, step: GenerationStep.Upload, finalGridUrl: null }))} 
+              className="px-12 py-5 bg-gray-200 text-gray-700 rounded-2xl font-black text-xl hover:bg-gray-300 transition-all"
             >
-              重新開始
+              重新製作
             </button>
           </div>
+          <p className="mt-8 text-gray-400 text-sm italic">提示：您可以使用裁切工具將此 4x3 網格切分為 12 張獨立貼圖上傳至 LINE Creators Market。</p>
         </div>
       )}
-
-      <footer className="mt-20 text-center pb-12">
-        <p className="text-gray-400 text-sm">Powered by Gemini 3 Pro Image</p>
-        <button 
-          // @ts-ignore
-          onClick={() => window.aistudio.openSelectKey()} 
-          className="mt-4 text-indigo-400 hover:text-indigo-600 text-xs font-medium"
-        >
-          更換 API 金鑰
-        </button>
-      </footer>
-
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fadeIn { animation: fadeIn 0.8s ease-out; }
-        .animate-slideIn { animation: slideIn 0.6s ease-out; }
-      `}</style>
     </div>
   );
 };
