@@ -3,7 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-// 建立運行時墊片，但不要覆蓋已存在的變數
+// 建立穩固的運行時環境變數物件，防止 Vite 構建時將 process.env 替換為空物件
 if (typeof (window as any).process === 'undefined') {
   (window as any).process = { env: {} };
 } else if (!(window as any).process.env) {

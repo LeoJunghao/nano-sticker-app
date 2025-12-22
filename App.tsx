@@ -7,7 +7,7 @@ const STYLE_PRESETS = [
   '2D Q版擬真圖',
   '3D Q版擬真圖',
   '超擬真彩色鉛筆素描風格',
-  'Q版誇張諷刺畫（Caricature 美式漫畫畫風）'
+  'Q版誇張諷刺畫'
 ];
 
 const App: React.FC = () => {
@@ -25,44 +25,50 @@ const App: React.FC = () => {
   });
 
   const [hasKey, setHasKey] = useState(false);
+  const [manualKey, setManualKey] = useState("");
+  const [showManualInput, setShowManualInput] = useState(false);
+
+  // 檢查環境是否支援平台金鑰選擇器
+  const isPlatformEnv = !!((window as any).aistudio && (window as any).aistudio.openSelectKey);
 
   useEffect(() => {
-    const checkKeyStatus = async () => {
-      // 優先檢查 window.process.env
-      const key = (window as any).process?.env?.API_KEY;
+    const checkKey = () => {
+      const win = window as any;
+      const key = win.process?.env?.API_KEY || win.API_KEY;
       if (key && key.length > 10) {
         setHasKey(true);
-        return;
-      }
-
-      // @ts-ignore - 檢查平台內建授權狀態
-      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
-        try {
-          // @ts-ignore
-          const isSelected = await window.aistudio.hasSelectedApiKey();
-          if (isSelected) setHasKey(true);
-        } catch (e) {}
+      } else {
+        setHasKey(false);
       }
     };
-
-    checkKeyStatus();
-    const interval = setInterval(checkKeyStatus, 2000);
-    return () => clearInterval(interval);
+    checkKey();
+    const timer = setInterval(checkKey, 2000);
+    return () => clearInterval(timer);
   }, []);
 
+  const handleApplyManualKey = () => {
+    const key = manualKey.trim();
+    if (key.length > 10) {
+      (window as any).process.env.API_KEY = key;
+      setHasKey(true);
+      setShowManualInput(false);
+      setState(prev => ({ ...prev, error: null }));
+    } else {
+      setState(prev => ({ ...prev, error: "無效的金鑰格式。" }));
+    }
+  };
+
   const handleOpenKeySelector = async () => {
-    // @ts-ignore
-    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+    if (isPlatformEnv) {
       try {
         // @ts-ignore
         await window.aistudio.openSelectKey();
-        // 點擊後立即假設成功以優化體驗，狀態會由 useEffect 持續更新
         setHasKey(true);
       } catch (e) {
-        console.error("Failed to open key selector", e);
+        setShowManualInput(true);
       }
     } else {
-      setState(prev => ({ ...prev, error: "無法開啟金鑰選擇器，請確認是否在支援的環境中執行。" }));
+      setShowManualInput(true);
     }
   };
 
@@ -87,20 +93,17 @@ const App: React.FC = () => {
 
   const handleGoBack = () => {
     setState(prev => {
-      const steps = [
-        GenerationStep.Upload,
-        GenerationStep.CharacterSelection,
-        GenerationStep.TextEntry,
-        GenerationStep.FinalResult
-      ];
-      const currentIndex = steps.indexOf(prev.step);
-      return { ...prev, step: currentIndex > 0 ? steps[currentIndex - 1] : steps[0], error: null };
+      let nextStep = GenerationStep.Upload;
+      if (prev.step === GenerationStep.CharacterSelection) nextStep = GenerationStep.Upload;
+      else if (prev.step === GenerationStep.TextEntry) nextStep = GenerationStep.CharacterSelection;
+      else if (prev.step === GenerationStep.FinalResult) nextStep = GenerationStep.TextEntry;
+      return { ...prev, step: nextStep, error: null };
     });
   };
 
   const handleGenerateCharacters = async () => {
     if (!hasKey) {
-      setState(prev => ({ ...prev, error: "請先點擊右上角「授權 Pro 模型」以繼續。" }));
+      setState(prev => ({ ...prev, error: "請先點擊上方授權金鑰。" }));
       return; 
     }
     setState(prev => ({ ...prev, isLoading: true, error: null }));
@@ -109,18 +112,8 @@ const App: React.FC = () => {
       const options: CharacterOption[] = urls.map((url, idx) => ({ id: `char-${idx}`, url, base64: url }));
       setState(prev => ({ ...prev, characterOptions: options, step: GenerationStep.CharacterSelection, isLoading: false }));
     } catch (err: any) {
-      console.error("API Error:", err);
-      let errorMsg = err.message || "生成失敗";
-      
-      if (errorMsg.includes("403") || errorMsg.includes("not found")) {
-        errorMsg = "權限錯誤。請確保您選擇的金鑰屬於已啟用計費的 GCP 專案。";
-        setHasKey(false); // 重置狀態
-      } else if (errorMsg === "API_KEY_MISSING") {
-        errorMsg = "API 金鑰遺失，請重新授權。";
-        setHasKey(false);
-      }
-
-      setState(prev => ({ ...prev, error: errorMsg, isLoading: false }));
+      const msg = err.message === "API_KEY_MISSING" ? "金鑰未正確設定，請重新嘗試授權。" : (err.message || "未知錯誤");
+      setState(prev => ({ ...prev, error: `生成失敗: ${msg}`, isLoading: false }));
     }
   };
 
@@ -135,7 +128,7 @@ const App: React.FC = () => {
       const gridUrl = await generateStickerGrid(state.selectedCharacter.base64, state.stickerText, state.stickerAdjectives);
       setState(prev => ({ ...prev, finalGridUrl: gridUrl, step: GenerationStep.FinalResult, isLoading: false }));
     } catch (err: any) {
-      setState(prev => ({ ...prev, error: `貼圖包繪製失敗：${err.message}`, isLoading: false }));
+      setState(prev => ({ ...prev, error: `繪製失敗: ${err.message}`, isLoading: false }));
     }
   };
 
@@ -144,66 +137,77 @@ const App: React.FC = () => {
       <header className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl font-black text-gray-900 tracking-tight italic">Nano Banana <span className="text-indigo-600">PRO</span></h1>
-          <p className="text-gray-500 font-bold mt-1">一致性角色旗艦貼圖代理</p>
+          <p className="text-gray-500 font-bold mt-1">一致性旗艦貼圖生成系統</p>
         </div>
         
         <div className="flex flex-col items-end gap-2">
           {hasKey ? (
-            <div className="bg-green-50 border-2 border-green-200 px-6 py-3 rounded-2xl flex items-center gap-3">
+            <div className="bg-green-50 border-2 border-green-200 px-6 py-3 rounded-2xl flex items-center gap-3 shadow-sm">
                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-               <span className="text-green-700 font-black text-sm">Pro 模型已授權</span>
-               <button onClick={handleOpenKeySelector} className="text-[10px] text-green-400 hover:underline ml-2">切換專案</button>
+               <span className="text-green-700 font-black text-sm">PRO 金鑰已連線</span>
+               <button onClick={() => setHasKey(false)} className="text-[10px] text-red-400 font-bold ml-2">重設</button>
             </div>
           ) : (
-            <button 
-              onClick={handleOpenKeySelector}
-              className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl hover:bg-indigo-700 transition-all flex items-center gap-3 active:scale-95"
-            >
-              🔐 授權 Pro 模型 (需已開啟計費)
-            </button>
+            <div className="flex flex-col gap-2 w-full sm:w-auto">
+              <button 
+                onClick={handleOpenKeySelector}
+                className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 active:scale-95"
+              >
+                🔐 授權 Pro 模型
+              </button>
+              {showManualInput && (
+                <div className="flex gap-2 animate-in fade-in slide-in-from-top-2">
+                  <input 
+                    type="password" 
+                    placeholder="輸入 API Key..." 
+                    value={manualKey} 
+                    onChange={(e) => setManualKey(e.target.value)}
+                    className="bg-white border-2 border-indigo-100 rounded-xl px-4 py-2 text-sm outline-none focus:border-indigo-600 w-48"
+                  />
+                  <button onClick={handleApplyManualKey} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-black">套用</button>
+                </div>
+              )}
+            </div>
           )}
-          <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-[10px] text-gray-400 underline hover:text-indigo-600 transition-colors">
-            如何開啟金鑰計費功能？
-          </a>
         </div>
       </header>
 
       {state.error && (
-        <div className="mb-8 bg-red-50 border-l-8 border-red-500 p-6 rounded-r-3xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
-          <p className="text-red-700 font-black">{state.error}</p>
-          <button onClick={() => setState(prev => ({ ...prev, error: null }))} className="ml-auto text-red-300 hover:text-red-500 transition-colors">✕</button>
+        <div className="mb-8 bg-red-50 border-l-8 border-red-500 p-6 rounded-r-3xl flex items-center gap-4 animate-in slide-in-from-top-4">
+          <p className="text-red-700 font-black flex-1">{state.error}</p>
+          <button onClick={() => setState(prev => ({ ...prev, error: null }))} className="text-red-300 hover:text-red-500">✕</button>
         </div>
       )}
 
       {state.isLoading && (
         <div className="fixed inset-0 bg-white/90 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-24 h-24 border-8 border-indigo-600 border-t-transparent rounded-full animate-spin mb-8 shadow-2xl shadow-indigo-100"></div>
-          <h3 className="text-3xl font-black mb-4 tracking-widest text-indigo-900">PRO 級運算中...</h3>
-          <p className="text-gray-500 font-bold text-lg">正在根據您的金鑰調用旗艦影像模型，請稍候 20-40 秒。</p>
+          <div className="w-24 h-24 border-8 border-indigo-600 border-t-transparent rounded-full animate-spin mb-8 shadow-2xl"></div>
+          <h3 className="text-3xl font-black mb-4 tracking-widest text-indigo-900 animate-pulse">繪製 4x3 繁體包中...</h3>
+          <p className="text-gray-500 font-bold text-lg max-w-md">正在調用 Gemini 3 Pro 旗艦影像能力，預計 20-40 秒完成。</p>
         </div>
       )}
 
       {state.step !== GenerationStep.Upload && !state.isLoading && (
         <button 
           onClick={handleGoBack}
-          className="mb-8 flex items-center gap-2 text-indigo-600 font-black bg-white border border-indigo-100 px-6 py-3 rounded-2xl hover:bg-indigo-50 transition-all shadow-sm"
+          className="mb-8 flex items-center gap-2 text-indigo-600 font-black bg-white border border-indigo-100 px-6 py-3 rounded-2xl hover:bg-indigo-50 transition-all shadow-sm group"
         >
-          <span className="text-2xl">←</span> 回到上一頁
+          <span className="text-2xl group-hover:-translate-x-1 transition-transform">←</span> 回到上一頁
         </button>
       )}
 
       {state.step === GenerationStep.Upload && (
         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
           <section className="bg-white p-10 rounded-[3.5rem] shadow-2xl border border-gray-100">
-            <h2 className="text-3xl font-black mb-8 flex items-center gap-4 italic text-gray-800">
+            <h2 className="text-3xl font-black mb-8 flex items-center gap-4 italic">
                <span className="bg-indigo-600 text-white w-10 h-10 rounded-2xl flex items-center justify-center text-lg shadow-lg">1</span>
-               角色基因上傳
+               角色基因庫
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-10">
               {state.referenceImages.map((img, idx) => (
                 <div key={idx} className="relative aspect-square rounded-[2rem] overflow-hidden border-4 border-gray-50 shadow-md group transform transition hover:scale-105">
                   <img src={img} className="w-full h-full object-cover" />
-                  <button onClick={() => setState(prev => ({ ...prev, referenceImages: prev.referenceImages.filter((_, i) => i !== idx)}))} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                  <button onClick={() => setState(prev => ({ ...prev, referenceImages: prev.referenceImages.filter((_, i) => i !== idx)}))} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-xl opacity-0 group-hover:opacity-100">✕</button>
                 </div>
               ))}
               {state.referenceImages.length < 5 && (
@@ -215,14 +219,13 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-8">
               <div>
-                <label className="block text-xs font-black text-gray-400 mb-4 uppercase tracking-[0.3em]">風格快捷鍵</label>
+                <label className="block text-xs font-black text-gray-400 mb-4 uppercase tracking-[0.2em]">畫風預設</label>
                 <div className="flex flex-wrap gap-2 mb-6">
                   {STYLE_PRESETS.map(preset => (
                     <button 
                       key={preset}
-                      type="button"
                       onClick={() => setState(prev => ({ ...prev, style: preset }))}
-                      className={`px-6 py-3 rounded-2xl text-sm font-black transition-all ${state.style === preset ? 'bg-indigo-600 text-white shadow-xl -translate-y-1' : 'bg-gray-50 text-gray-400 hover:text-indigo-600 active:scale-95'}`}
+                      className={`px-6 py-3 rounded-2xl text-sm font-black transition-all ${state.style === preset ? 'bg-indigo-600 text-white shadow-xl -translate-y-1' : 'bg-gray-50 text-gray-400 hover:text-indigo-600'}`}
                     >
                       {preset}
                     </button>
@@ -232,16 +235,16 @@ const App: React.FC = () => {
                   type="text" 
                   value={state.style} 
                   onChange={(e) => setState(prev => ({ ...prev, style: e.target.value }))}
-                  placeholder="自定義風格描述..."
-                  className="w-full px-8 py-5 bg-gray-50 border-2 border-transparent rounded-[2rem] outline-none font-black text-xl focus:border-indigo-600 focus:bg-white shadow-inner transition-all"
+                  placeholder="或自定義細節描述..."
+                  className="w-full px-8 py-5 bg-gray-50 border-2 border-transparent rounded-[2.5rem] outline-none font-black text-xl focus:border-indigo-600 focus:bg-white shadow-inner"
                 />
               </div>
               <button 
                 onClick={handleGenerateCharacters}
                 disabled={state.referenceImages.length === 0 || !hasKey}
-                className={`w-full py-8 rounded-[2.5rem] font-black text-2xl shadow-2xl transition-all ${state.referenceImages.length === 0 || !hasKey ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.98]'}`}
+                className={`w-full py-8 rounded-[3rem] font-black text-2xl shadow-2xl transition-all ${state.referenceImages.length === 0 || !hasKey ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'}`}
               >
-                {!hasKey ? '請先點擊右上角授權' : '生成一致性角色原型'}
+                {!hasKey ? '請先完成金鑰授權' : '生成一致性基準角色'}
               </button>
             </div>
           </section>
@@ -253,9 +256,9 @@ const App: React.FC = () => {
           <h2 className="text-4xl font-black mb-10 text-center italic">基因選擇：指定核心基準</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
             {state.characterOptions.map((char) => (
-              <div key={char.id} className="cursor-pointer bg-white rounded-[3rem] overflow-hidden shadow-2xl border-8 border-transparent hover:border-indigo-600 transform transition-all hover:-translate-y-4" onClick={() => handleSelectCharacter(char)}>
+              <div key={char.id} className="cursor-pointer bg-white rounded-[3.5rem] overflow-hidden shadow-2xl border-8 border-transparent hover:border-indigo-600 transform transition-all hover:-translate-y-4" onClick={() => handleSelectCharacter(char)}>
                 <img src={char.url} className="w-full aspect-square object-cover" />
-                <div className="p-6 text-center font-black text-indigo-600 text-xl bg-indigo-50/50">以此鑄造貼圖包</div>
+                <div className="p-6 text-center font-black text-indigo-600 text-xl bg-indigo-50/30">選取此原型</div>
               </div>
             ))}
           </div>
@@ -264,10 +267,10 @@ const App: React.FC = () => {
 
       {state.step === GenerationStep.TextEntry && (
         <div className="bg-white p-12 rounded-[4rem] shadow-2xl border border-gray-100 animate-in slide-in-from-right-12 duration-700">
-          <h2 className="text-3xl font-black mb-10 italic">2. 貼圖規劃：標語與氛圍</h2>
+          <h2 className="text-3xl font-black mb-10 italic">貼圖規劃：標語與氛圍</h2>
           <div className="space-y-10">
             <div>
-              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">12 組貼圖標語 (逗號分隔，將轉化為手寫繁體)</label>
+              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">12 組標語 (轉化為繁體手寫文字)</label>
               <textarea 
                 value={state.stickerText} 
                 onChange={(e) => setState(prev => ({ ...prev, stickerText: e.target.value }))} 
@@ -275,16 +278,17 @@ const App: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">表情包形容詞 (例如：搞怪, 誇張表情, 超級可愛...)</label>
+              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">表情包形容詞 (決定互動氛圍)</label>
               <input 
                 type="text"
                 value={state.stickerAdjectives} 
                 onChange={(e) => setState(prev => ({ ...prev, stickerAdjectives: e.target.value }))} 
+                placeholder="例如：誇張顏藝, 超級可愛, 搞怪幽默, 日系甜美..."
                 className="w-full p-8 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-[2.5rem] outline-none font-black text-2xl shadow-inner transition-all"
               />
             </div>
-            <button onClick={handleGenerateStickers} className="w-full py-8 bg-indigo-600 text-white rounded-[3rem] font-black text-3xl hover:bg-indigo-700 shadow-2xl active:scale-95 transition-all">
-              生成 4x3 表情組合包
+            <button onClick={handleGenerateStickers} className="w-full py-8 bg-indigo-600 text-white rounded-[3.5rem] font-black text-3xl hover:bg-indigo-700 shadow-2xl active:scale-95 transition-all">
+              鑄造 4x3 高清貼圖組合
             </button>
           </div>
         </div>
@@ -292,13 +296,13 @@ const App: React.FC = () => {
 
       {state.step === GenerationStep.FinalResult && state.finalGridUrl && (
         <div className="text-center animate-in zoom-in-50 duration-700">
-          <h2 className="text-5xl font-black mb-10 italic text-indigo-900">鑄造成功：PRO 旗艦表情包</h2>
-          <div className="relative group inline-block">
-             <img src={state.finalGridUrl} className="max-w-full rounded-[4rem] shadow-2xl mb-12 border-[12px] border-white transform transition hover:scale-[1.02]" alt="Final Stickers" />
+          <h2 className="text-5xl font-black mb-10 italic text-indigo-900">鑄造成功！</h2>
+          <div className="inline-block relative">
+             <img src={state.finalGridUrl} className="max-w-full rounded-[4rem] shadow-2xl mb-12 border-[12px] border-white" alt="Final Stickers" />
           </div>
           <div className="flex flex-wrap gap-6 justify-center">
-            <a href={state.finalGridUrl} download="pro-stickers.png" className="px-14 py-7 bg-green-600 text-white rounded-[2.5rem] font-black text-2xl shadow-2xl hover:bg-green-700 transition-all hover:scale-105">下載貼圖包 (1K/16:9)</a>
-            <button onClick={() => window.location.reload()} className="px-14 py-7 bg-gray-200 text-gray-600 rounded-[2.5rem] font-black text-2xl hover:bg-gray-300 transition-all">製作新角色</button>
+            <a href={state.finalGridUrl} download="pro-stickers-grid.png" className="px-14 py-7 bg-green-600 text-white rounded-[2.5rem] font-black text-2xl shadow-2xl hover:bg-green-700 transition-all hover:scale-105">下載貼圖包 (16:9)</a>
+            <button onClick={() => window.location.reload()} className="px-14 py-7 bg-gray-200 text-gray-600 rounded-[2.5rem] font-black text-2xl hover:bg-gray-300 transition-all">開啟新計畫</button>
           </div>
         </div>
       )}
