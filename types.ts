@@ -13,6 +13,7 @@ export interface AppState {
   selectedCharacter: CharacterOption | null;
   stickerText: string;
   stickerAdjectives: string;
+  stickerRequirement: string; // 新增：表情包產生需求說明
   finalGridUrl: string | null;
   isLoading: boolean;
   error: string | null;

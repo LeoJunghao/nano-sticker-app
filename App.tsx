@@ -19,6 +19,7 @@ const App: React.FC = () => {
     selectedCharacter: null,
     stickerText: "早安, 謝謝, 辛苦了, 讚啦, 沒問題, 傻眼, 哭哭, 哈哈, 忙碌中, 想你, 拜託, 晚安",
     stickerAdjectives: "搞怪, 誇張表情, 充滿活力, 可愛",
+    stickerRequirement: "用原圖生圖，搞怪，誇張表情，充滿活力，可愛，角色動作要有互動感，並穿著整齊的服裝。",
     finalGridUrl: null,
     isLoading: false,
     error: null,
@@ -27,7 +28,6 @@ const App: React.FC = () => {
   const [hasKey, setHasKey] = useState(false);
   const [manualKey, setManualKey] = useState("");
   
-  // 檢查環境是否為 AI Studio 預覽環境
   // @ts-ignore
   const isPlatformEnv = !!(window.aistudio && window.aistudio.openSelectKey);
 
@@ -118,7 +118,11 @@ const App: React.FC = () => {
     if (!state.selectedCharacter) return;
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     try {
-      const gridUrl = await generateStickerGrid(state.selectedCharacter.base64, state.stickerText, state.stickerAdjectives);
+      const gridUrl = await generateStickerGrid(
+        state.selectedCharacter.base64, 
+        state.stickerText, 
+        state.stickerRequirement
+      );
       setState(prev => ({ ...prev, finalGridUrl: gridUrl, step: GenerationStep.FinalResult, isLoading: false }));
     } catch (err: any) {
       setState(prev => ({ ...prev, error: `繪製失敗：${err.message}`, isLoading: false }));
@@ -130,7 +134,7 @@ const App: React.FC = () => {
       <header className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl font-black text-gray-900 tracking-tight italic">Nano Banana <span className="text-indigo-600">PRO</span></h1>
-          <p className="text-gray-500 font-bold mt-1">一致性角色貼圖生成器 (外部連結修復版)</p>
+          <p className="text-gray-500 font-bold mt-1">一致性旗艦貼圖生成系統</p>
         </div>
         
         <div className="flex flex-col items-end gap-2">
@@ -174,8 +178,8 @@ const App: React.FC = () => {
       {state.isLoading && (
         <div className="fixed inset-0 bg-white/90 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-6 text-center">
           <div className="w-24 h-24 border-8 border-indigo-600 border-t-transparent rounded-full animate-spin mb-8 shadow-2xl"></div>
-          <h3 className="text-3xl font-black mb-4 tracking-widest text-indigo-900">繪製 4x3 繁體包中...</h3>
-          <p className="text-gray-500 font-bold text-lg max-w-md">正在調用 Gemini 3 Pro 旗艦影像能力，預計 30-50 秒完成。</p>
+          <h3 className="text-3xl font-black mb-4 tracking-widest text-indigo-900 animate-pulse">繪製 4x3 繁體包中...</h3>
+          <p className="text-gray-500 font-bold text-lg max-w-md">正在根據需求與基準圖進行 PRO 級繪製，預計 30-50 秒完成。</p>
         </div>
       )}
 
@@ -234,12 +238,12 @@ const App: React.FC = () => {
 
       {state.step === GenerationStep.CharacterSelection && (
         <div className="animate-in zoom-in duration-500">
-          <h2 className="text-4xl font-black mb-10 text-center italic">基因選擇</h2>
+          <h2 className="text-4xl font-black mb-10 text-center italic text-gray-800">2. 基因選擇：指定核心基準</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
             {state.characterOptions.map((char) => (
               <div key={char.id} className="cursor-pointer bg-white rounded-[3.5rem] overflow-hidden shadow-2xl border-8 border-transparent hover:border-indigo-600 transform transition-all hover:-translate-y-4" onClick={() => handleSelectCharacter(char)}>
                 <img src={char.url} className="w-full aspect-square object-cover" />
-                <div className="p-6 text-center font-black text-indigo-600 text-xl bg-indigo-50/30">選取此原型</div>
+                <div className="p-6 text-center font-black text-indigo-600 text-xl bg-indigo-50/30">選取此原型進行鑄造</div>
               </div>
             ))}
           </div>
@@ -248,27 +252,29 @@ const App: React.FC = () => {
 
       {state.step === GenerationStep.TextEntry && (
         <div className="bg-white p-12 rounded-[4rem] shadow-2xl border border-gray-100 animate-in slide-in-from-right-12 duration-700">
-          <h2 className="text-3xl font-black mb-10 italic">貼圖與標語規劃</h2>
-          <div className="space-y-10">
+          <h2 className="text-3xl font-black mb-10 italic text-gray-800">3. 貼圖與標語規劃</h2>
+          <div className="space-y-12">
             <div>
               <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">12 組貼圖標語 (轉化為繁體手寫文字)</label>
               <textarea 
                 value={state.stickerText} 
                 onChange={(e) => setState(prev => ({ ...prev, stickerText: e.target.value }))} 
-                className="w-full p-8 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-[3rem] outline-none font-black text-2xl min-h-[180px] shadow-inner"
+                className="w-full p-8 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-[3rem] outline-none font-black text-2xl min-h-[160px] shadow-inner transition-all"
               />
             </div>
+            
             <div>
-              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">表情形容詞 (決定互動氛圍)</label>
-              <input 
-                type="text"
-                value={state.stickerAdjectives} 
-                onChange={(e) => setState(prev => ({ ...prev, stickerAdjectives: e.target.value }))} 
-                className="w-full p-8 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-[2.5rem] outline-none font-black text-2xl shadow-inner"
+              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">表情包產生需求說明 (具體動作、背景或情緒需求)</label>
+              <textarea 
+                value={state.stickerRequirement} 
+                onChange={(e) => setState(prev => ({ ...prev, stickerRequirement: e.target.value }))} 
+                placeholder="例如：每個標語都要搭配誇張的肢體動作，背景要有閃亮特效，角色要穿著正式西裝..."
+                className="w-full p-8 bg-indigo-50/30 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-[3rem] outline-none font-black text-2xl min-h-[160px] shadow-inner transition-all"
               />
             </div>
-            <button onClick={handleGenerateStickers} className="w-full py-8 bg-indigo-600 text-white rounded-[3.5rem] font-black text-3xl hover:bg-indigo-700 shadow-2xl active:scale-95 transition-all">
-              鑄造 4x3 高清貼圖組合
+
+            <button onClick={handleGenerateStickers} className="w-full py-10 bg-indigo-600 text-white rounded-[3.5rem] font-black text-3xl hover:bg-indigo-700 shadow-2xl active:scale-95 transition-all">
+              鑄造 4x3 高清貼圖組合包
             </button>
           </div>
         </div>
@@ -281,8 +287,8 @@ const App: React.FC = () => {
              <img src={state.finalGridUrl} className="max-w-full rounded-[4rem] shadow-2xl mb-12 border-[12px] border-white" alt="Final Stickers" />
           </div>
           <div className="flex flex-wrap gap-6 justify-center">
-            <a href={state.finalGridUrl} download="my-nano-stickers.png" className="px-14 py-7 bg-green-600 text-white rounded-[2.5rem] font-black text-2xl shadow-2xl hover:bg-green-700 transition-all hover:scale-105">下載貼圖包 (16:9)</a>
-            <button onClick={() => window.location.reload()} className="px-14 py-7 bg-gray-200 text-gray-600 rounded-[2.5rem] font-black text-2xl hover:bg-gray-300 transition-all">製作新角色</button>
+            <a href={state.finalGridUrl} download="sticker-grid-pro.png" className="px-14 py-7 bg-green-600 text-white rounded-[2.5rem] font-black text-2xl shadow-2xl hover:bg-green-700 transition-all hover:scale-105">下載貼圖包 (16:9 / 1K)</a>
+            <button onClick={() => window.location.reload()} className="px-14 py-7 bg-gray-200 text-gray-600 rounded-[2.5rem] font-black text-2xl hover:bg-gray-300 transition-all">開始新創作</button>
           </div>
         </div>
       )}
