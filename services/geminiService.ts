@@ -67,26 +67,35 @@ export const generateStickerGrid = async (
 ): Promise<string | null> => {
   const ai = getClient();
   
-  // 深度融合 Prompt：整合原圖、12組標語與具體需求說明
+  // 檢查是否要求「不要出現文字」
+  const shouldOmitText = stickerRequirement.includes("不要出現文字") || stickerRequirement.includes("不含文字") || stickerRequirement.includes("無文字");
+
+  const textInstruction = shouldOmitText 
+    ? "STRICT RULE: DO NOT include any text or labels in the final image. Use the phrases ONLY as SCENARIO references for the character's poses and emotions."
+    : `Add these 12 labels, one for each frame: "${stickerText}". Language: Traditional Chinese (繁體中文). Style: CUTE HANDWRITTEN (手寫風格), bold and integrated.`;
+
+  // 深度融合 Prompt
   const prompt = `ACT AS A PROFESSIONAL LINE STICKER DESIGNER.
   
   INPUT CHARACTER: The provided image is the base character genetic. 
   
   TASK: Create a single 16:9 image containing exactly 12 stickers in a 4x3 GRID layout.
   
-  SPECIFIC REQUIREMENTS FROM USER: "${stickerRequirement}"
+  SCENARIO CONTEXT (12 Phrases for 12 Poses): "${stickerText}"
   
-  STICKER PHRASES (Traditional Chinese):
-  Add these 12 labels, one for each frame: "${stickerText}".
+  USER'S SPECIFIC GENERATION REQUIREMENTS: "${stickerRequirement}"
+  
+  TEXT RENDERING RULE:
+  ${textInstruction}
   
   VISUAL STYLE RULES:
   1. CHARACTER CONSISTENCY: The character must be IDENTICAL to the input image in all 12 frames.
-  2. TEXT STYLE: Bold, cute, "HANDWRITTEN" (手寫風格) Traditional Chinese text integrated creatively into each frame.
-  3. LAYOUT: Strictly 4 columns and 3 rows.
-  4. BACKGROUND: Pure white background for easy cropping.
-  5. COMPOSITION: High-quality rendering, 1K resolution.
+  2. LAYOUT: Strictly 4 columns and 3 rows grid.
+  3. POSES: Each of the 12 poses must match the vibe of the 12 phrases provided in SCENARIO CONTEXT.
+  4. BACKGROUND: Pure white background.
+  5. COMPOSITION: 1K resolution, professional 2D/3D commercial quality.
   
-  Combine the user's requirements with the character and text to create a masterpiece.`;
+  Ensure the 12 stickers are distinct, expressive, and high-quality.`;
 
   try {
     const response = await ai.models.generateContent({
