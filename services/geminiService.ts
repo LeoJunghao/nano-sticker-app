@@ -5,7 +5,6 @@ import { GoogleGenAI } from "@google/genai";
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 
 const getClient = () => {
-  // 優先讀取 window 墊片中的值，這是在外部連結手動輸入後存放的地方
   const apiKey = (window as any).process?.env?.API_KEY || process.env.API_KEY;
   
   if (!apiKey || apiKey.length < 10) {
@@ -64,18 +63,30 @@ export const generateCharacterOptions = async (
 export const generateStickerGrid = async (
   characterBase64: string,
   stickerText: string,
-  stickerAdjectives: string
+  stickerRequirement: string
 ): Promise<string | null> => {
   const ai = getClient();
   
-  const prompt = `ACT AS A PRO STICKER AGENT. 
-  Task: Create a sticker sheet with EXACTLY 12 distinct poses in a 4x3 GRID layout.
-  Character: Same as input, strictly consistent.
-  Adjectives: ${stickerAdjectives}.
-  Text Labels: ${stickerText}.
-  Language: Traditional Chinese (繁體中文).
-  Style: CUTE HANDWRITTEN (手寫感), bold and clear text in each frame.
-  Canvas: 4 columns x 3 rows. 16:9 ratio. Pure White background.`;
+  // 深度融合 Prompt：整合原圖、12組標語與具體需求說明
+  const prompt = `ACT AS A PROFESSIONAL LINE STICKER DESIGNER.
+  
+  INPUT CHARACTER: The provided image is the base character genetic. 
+  
+  TASK: Create a single 16:9 image containing exactly 12 stickers in a 4x3 GRID layout.
+  
+  SPECIFIC REQUIREMENTS FROM USER: "${stickerRequirement}"
+  
+  STICKER PHRASES (Traditional Chinese):
+  Add these 12 labels, one for each frame: "${stickerText}".
+  
+  VISUAL STYLE RULES:
+  1. CHARACTER CONSISTENCY: The character must be IDENTICAL to the input image in all 12 frames.
+  2. TEXT STYLE: Bold, cute, "HANDWRITTEN" (手寫風格) Traditional Chinese text integrated creatively into each frame.
+  3. LAYOUT: Strictly 4 columns and 3 rows.
+  4. BACKGROUND: Pure white background for easy cropping.
+  5. COMPOSITION: High-quality rendering, 1K resolution.
+  
+  Combine the user's requirements with the character and text to create a masterpiece.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -87,7 +98,10 @@ export const generateStickerGrid = async (
         ]
       },
       config: { 
-        imageConfig: { aspectRatio: "16:9", imageSize: "1K" } 
+        imageConfig: { 
+          aspectRatio: "16:9", 
+          imageSize: "1K" 
+        } 
       }
     });
 
@@ -96,7 +110,7 @@ export const generateStickerGrid = async (
       return `data:image/png;base64,${imagePart.inlineData.data}`;
     }
   } catch (error: any) {
-    console.error("Grid Error:", error);
+    console.error("Grid Generation Error:", error);
     throw error;
   }
   return null;
