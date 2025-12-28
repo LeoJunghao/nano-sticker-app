@@ -255,20 +255,21 @@ const App: React.FC = () => {
           <h2 className="text-3xl font-black mb-10 italic text-gray-800">3. 貼圖與標語規劃</h2>
           <div className="space-y-12">
             <div>
-              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">12 組貼圖標語 (轉化為繁體手寫文字)</label>
+              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">12 組貼圖標語 (作為情境表達內容)</label>
               <textarea 
                 value={state.stickerText} 
                 onChange={(e) => setState(prev => ({ ...prev, stickerText: e.target.value }))} 
+                placeholder="輸入 12 個標語，將作為動作參考情境..."
                 className="w-full p-8 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-[3rem] outline-none font-black text-2xl min-h-[160px] shadow-inner transition-all"
               />
             </div>
             
             <div>
-              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">表情包產生需求說明 (具體動作、背景或情緒需求)</label>
+              <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">表情包產生需求說明 (若輸入「不要出現文字」則僅產生動作圖)</label>
               <textarea 
                 value={state.stickerRequirement} 
                 onChange={(e) => setState(prev => ({ ...prev, stickerRequirement: e.target.value }))} 
-                placeholder="例如：每個標語都要搭配誇張的肢體動作，背景要有閃亮特效，角色要穿著正式西裝..."
+                placeholder="例如：每個標語都要搭配誇張動作。提示：若輸入「不要出現文字」，最後生成圖將不含任何文字。"
                 className="w-full p-8 bg-indigo-50/30 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-[3rem] outline-none font-black text-2xl min-h-[160px] shadow-inner transition-all"
               />
             </div>
