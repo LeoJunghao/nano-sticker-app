@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 // 旗艦版模型，支援 1K 高清與 4x3 佈局
@@ -27,7 +26,7 @@ export const generateCharacterOptions = async (
   ];
 
   for (const prompt of prompts) {
-    const imageParts = referenceImages.map(base64 => ({
+    const imageParts = referenceImages.map((base64: string) => ({
       inlineData: {
         data: base64.split(',')[1] || base64,
         mimeType: 'image/png'
