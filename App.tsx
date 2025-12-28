@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GenerationStep, AppState, CharacterOption } from './types';
 import { generateCharacterOptions, generateStickerGrid } from './services/geminiService';
@@ -45,9 +44,9 @@ const App: React.FC = () => {
     if (manualKey.trim().length > 10) {
       (window as any).process.env.API_KEY = manualKey.trim();
       setHasKey(true);
-      setState(prev => ({ ...prev, error: null }));
+      setState((prev: AppState) => ({ ...prev, error: null }));
     } else {
-      setState(prev => ({ ...prev, error: "金鑰格式不正確。" }));
+      setState((prev: AppState) => ({ ...prev, error: "金鑰格式不正確。" }));
     }
   };
 
@@ -58,7 +57,7 @@ const App: React.FC = () => {
         await window.aistudio.openSelectKey();
         setHasKey(true);
       } catch (e) {
-        setState(prev => ({ ...prev, error: "金鑰選擇器開啟失敗，請使用手動輸入。" }));
+        setState((prev: AppState) => ({ ...prev, error: "金鑰選擇器開啟失敗，請使用手動輸入。" }));
       }
     }
   };
@@ -74,8 +73,8 @@ const App: React.FC = () => {
         reader.readAsDataURL(file);
       });
     });
-    Promise.all(promises).then(base64Images => {
-      setState(prev => ({ 
+    Promise.all(promises).then((base64Images: string[]) => {
+      setState((prev: AppState) => ({ 
         ...prev, 
         referenceImages: [...prev.referenceImages, ...base64Images].slice(0, 5) 
       }));
@@ -83,7 +82,7 @@ const App: React.FC = () => {
   };
 
   const handleGoBack = () => {
-    setState(prev => {
+    setState((prev: AppState) => {
       let nextStep = GenerationStep.Upload;
       if (prev.step === GenerationStep.CharacterSelection) nextStep = GenerationStep.Upload;
       else if (prev.step === GenerationStep.TextEntry) nextStep = GenerationStep.CharacterSelection;
@@ -94,38 +93,38 @@ const App: React.FC = () => {
 
   const handleGenerateCharacters = async () => {
     if (!hasKey) {
-      setState(prev => ({ ...prev, error: "請先設定 API 金鑰。" }));
+      setState((prev: AppState) => ({ ...prev, error: "請先設定 API 金鑰。" }));
       return; 
     }
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setState((prev: AppState) => ({ ...prev, isLoading: true, error: null }));
     try {
       const urls = await generateCharacterOptions(state.referenceImages, state.style);
-      const options: CharacterOption[] = urls.map((url, idx) => ({ id: `char-${idx}`, url, base64: url }));
-      setState(prev => ({ ...prev, characterOptions: options, step: GenerationStep.CharacterSelection, isLoading: false }));
+      const options: CharacterOption[] = urls.map((url: string, idx: number) => ({ id: `char-${idx}`, url, base64: url }));
+      setState((prev: AppState) => ({ ...prev, characterOptions: options, step: GenerationStep.CharacterSelection, isLoading: false }));
     } catch (err: any) {
       let msg = err.message;
       if (msg === "BILLING_REQUIRED") msg = "模型調用失敗：Pro 模型需使用已開啟「付費計費」的金鑰。";
       else if (msg === "API_KEY_MISSING") msg = "金鑰遺失，請重新輸入。";
-      setState(prev => ({ ...prev, error: msg || "生成失敗", isLoading: false }));
+      setState((prev: AppState) => ({ ...prev, error: msg || "生成失敗", isLoading: false }));
     }
   };
 
   const handleSelectCharacter = (char: CharacterOption) => {
-    setState(prev => ({ ...prev, selectedCharacter: char, step: GenerationStep.TextEntry }));
+    setState((prev: AppState) => ({ ...prev, selectedCharacter: char, step: GenerationStep.TextEntry }));
   };
 
   const handleGenerateStickers = async () => {
     if (!state.selectedCharacter) return;
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setState((prev: AppState) => ({ ...prev, isLoading: true, error: null }));
     try {
       const gridUrl = await generateStickerGrid(
         state.selectedCharacter.base64, 
         state.stickerText, 
         state.stickerRequirement
       );
-      setState(prev => ({ ...prev, finalGridUrl: gridUrl, step: GenerationStep.FinalResult, isLoading: false }));
+      setState((prev: AppState) => ({ ...prev, finalGridUrl: gridUrl, step: GenerationStep.FinalResult, isLoading: false }));
     } catch (err: any) {
-      setState(prev => ({ ...prev, error: `繪製失敗：${err.message}`, isLoading: false }));
+      setState((prev: AppState) => ({ ...prev, error: `繪製失敗：${err.message}`, isLoading: false }));
     }
   };
 
@@ -171,7 +170,7 @@ const App: React.FC = () => {
       {state.error && (
         <div className="mb-8 bg-red-50 border-l-8 border-red-500 p-6 rounded-r-3xl flex items-center gap-4 animate-in slide-in-from-top-4">
           <p className="text-red-700 font-black flex-1">{state.error}</p>
-          <button onClick={() => setState(prev => ({ ...prev, error: null }))} className="text-red-300">✕</button>
+          <button onClick={() => setState((prev: AppState) => ({ ...prev, error: null }))} className="text-red-300">✕</button>
         </div>
       )}
 
@@ -197,10 +196,10 @@ const App: React.FC = () => {
                角色基因庫
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-10">
-              {state.referenceImages.map((img, idx) => (
+              {state.referenceImages.map((img: string, idx: number) => (
                 <div key={idx} className="relative aspect-square rounded-[2rem] overflow-hidden border-4 border-gray-50 shadow-md group transform transition hover:scale-105">
                   <img src={img} className="w-full h-full object-cover" />
-                  <button onClick={() => setState(prev => ({ ...prev, referenceImages: prev.referenceImages.filter((_, i) => i !== idx)}))} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-xl opacity-0 group-hover:opacity-100">✕</button>
+                  <button onClick={() => setState((prev: AppState) => ({ ...prev, referenceImages: prev.referenceImages.filter((_: string, i: number) => i !== idx)}))} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-xl opacity-0 group-hover:opacity-100">✕</button>
                 </div>
               ))}
               {state.referenceImages.length < 5 && (
@@ -214,8 +213,8 @@ const App: React.FC = () => {
               <div>
                 <label className="block text-xs font-black text-gray-400 mb-4 uppercase tracking-[0.2em]">畫風設定</label>
                 <div className="flex flex-wrap gap-2 mb-6">
-                  {STYLE_PRESETS.map(preset => (
-                    <button key={preset} onClick={() => setState(prev => ({ ...prev, style: preset }))} className={`px-6 py-3 rounded-2xl text-sm font-black transition-all ${state.style === preset ? 'bg-indigo-600 text-white shadow-xl -translate-y-1' : 'bg-gray-50 text-gray-400 hover:text-indigo-600'}`}>
+                  {STYLE_PRESETS.map((preset: string) => (
+                    <button key={preset} onClick={() => setState((prev: AppState) => ({ ...prev, style: preset }))} className={`px-6 py-3 rounded-2xl text-sm font-black transition-all ${state.style === preset ? 'bg-indigo-600 text-white shadow-xl -translate-y-1' : 'bg-gray-50 text-gray-400 hover:text-indigo-600'}`}>
                       {preset}
                     </button>
                   ))}
@@ -223,7 +222,7 @@ const App: React.FC = () => {
                 <input 
                   type="text" 
                   value={state.style} 
-                  onChange={(e) => setState(prev => ({ ...prev, style: e.target.value }))}
+                  onChange={(e) => setState((prev: AppState) => ({ ...prev, style: e.target.value }))}
                   placeholder="或描述特定風格細節..."
                   className="w-full px-8 py-5 bg-gray-50 border-2 border-transparent rounded-[2.5rem] outline-none font-black text-xl focus:border-indigo-600 focus:bg-white shadow-inner"
                 />
@@ -240,7 +239,7 @@ const App: React.FC = () => {
         <div className="animate-in zoom-in duration-500">
           <h2 className="text-4xl font-black mb-10 text-center italic text-gray-800">2. 基因選擇：指定核心基準</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-            {state.characterOptions.map((char) => (
+            {state.characterOptions.map((char: CharacterOption) => (
               <div key={char.id} className="cursor-pointer bg-white rounded-[3.5rem] overflow-hidden shadow-2xl border-8 border-transparent hover:border-indigo-600 transform transition-all hover:-translate-y-4" onClick={() => handleSelectCharacter(char)}>
                 <img src={char.url} className="w-full aspect-square object-cover" />
                 <div className="p-6 text-center font-black text-indigo-600 text-xl bg-indigo-50/30">選取此原型進行鑄造</div>
@@ -258,7 +257,7 @@ const App: React.FC = () => {
               <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">12 組貼圖標語 (作為情境表達內容)</label>
               <textarea 
                 value={state.stickerText} 
-                onChange={(e) => setState(prev => ({ ...prev, stickerText: e.target.value }))} 
+                onChange={(e) => setState((prev: AppState) => ({ ...prev, stickerText: e.target.value }))} 
                 placeholder="輸入 12 個標語，將作為動作參考情境..."
                 className="w-full p-8 bg-gray-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-[3rem] outline-none font-black text-2xl min-h-[160px] shadow-inner transition-all"
               />
@@ -268,7 +267,7 @@ const App: React.FC = () => {
               <label className="block text-sm font-black text-gray-400 mb-4 uppercase tracking-widest">表情包產生需求說明 (若輸入「不要出現文字」則僅產生動作圖)</label>
               <textarea 
                 value={state.stickerRequirement} 
-                onChange={(e) => setState(prev => ({ ...prev, stickerRequirement: e.target.value }))} 
+                onChange={(e) => setState((prev: AppState) => ({ ...prev, stickerRequirement: e.target.value }))} 
                 placeholder="例如：每個標語都要搭配誇張動作。提示：若輸入「不要出現文字」，最後生成圖將不含任何文字。"
                 className="w-full p-8 bg-indigo-50/30 border-2 border-transparent focus:border-indigo-600 focus:bg-white rounded-[3rem] outline-none font-black text-2xl min-h-[160px] shadow-inner transition-all"
               />
